@@ -1,0 +1,61 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Verify Xcode 26 and project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcode-select -p
+          xcodebuild -version
+          xcodebuild -showsdks
+          xcodebuild -list -project NetControlKZ.xcodeproj
+          plutil -lint NetControlKZ.xcodeproj/project.pbxproj
+          plutil -lint NetControlKZ/Info.plist
+
+      - name: Build unsigned iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project NetControlKZ.xcodeproj \
+            -scheme NetControlKZ \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/LANControlKZ-DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/LANControlKZ-DerivedData/Build/Products/Release/NetControlKZ.app"
+          ./scripts/package_ipa.sh "$APP_PATH" LANControlKZ-unsigned.ipa
+          unzip -t LANControlKZ-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LANControlKZ-unsigned-IPA
+          path: LANControlKZ-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
